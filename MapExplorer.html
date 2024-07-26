@@ -1,0 +1,459 @@
+<meta charset="UTF-8">
+</meta>
+<script>
+/* ----------------------------------------------------------------------------------
+
+    Hooper-Truchet Tilings
+
+                                                 Pierre Gradit, Vincent Van Dongen 
+
+    Improvements around Figure 2 from the article:
+
+    [1] "Renormalization of polygon exchange maps arising from corner percolation", 
+    W.P. Hooper in Inventiones Mathematicae 191 (2013), Volume 191, no. 2, 255-320.
+    https://arxiv.org/pdf/1105.6137.pdf
+
+    First seen in:
+
+    [2] "2019 ICERM Illustrating Mathematics", 
+    http://gallery.bridgesmathart.org/exhibitions/2019-icerm-illustrating-mathematics
+
+    For a user-friendly approach of Truchet tilings:
+
+    [3] Truchet tilings and their generalisations. 
+    Lord, Eric & Ranganathan, Srinivasa. (2006). Resonance. 11. 42-50. 10.1007/BF02838881. 
+    https://www.researchgate.net/publication/227098904_Truchet_tilings_and_their_generalisations
+
+/* ----------------------------------------------------------------------------------*/ 
+    // Recovery of χ and λ from html query string
+    search    = new URLSearchParams(window.location.search)
+    query_int = (key, def) => search.has(key) ? parseInt(search.get(key)) : def
+    query_str = (key, def) => search.has(key) ? search.get(key) : def
+    let χ     = () => query_int('k', 0) 
+    let ϵ     = Math.exp(-32)
+
+    // JS caveat: modulo of negative is negative
+    modx = (λ) => (ν) => (((ν % λ) + λ) % λ);  
+    mod2 = modx(2); mod4 = modx(4); mod360 = modx(360);
+/* ----------------------------------------------------------------------------------*/ 
+// Recovery of χ and λ from html query string
+
+SPIN = 1;  // 90° Clockwise -> [◤, ◥, ◢, ◣]
+//  H. Color of left border:   [1, 0, 0, 1] inverted each horizontal step
+//  V. Color of bottom border: [0, 0, 1, 1] inverted each vertical step
+//  τ : ℤ x ℤ -> [◤, ◥, ◢, ◣], the plane fonction
+//  Ξ : ℤ     -> [◤, ◥, ◢, ◣], the diagonal function
+
+// Contribution: Hooper's τ reduced to single dimension Ξ 
+let H = (x, y) => [[1, 0, 0, 1], [0, 1, 1, 0]][mod2(x - y)][Ξv(y)];
+let V = (x, y) => [[0, 0, 1, 1], [1, 1, 0, 0]][mod2(y - x)][Ξh(x)];
+let τ = (x, y) => [[1, 2], [0, 3]][H(x, y)][V(x, y)];
+//                [[◥, ◢], [◤, ◣]]
+//                   ⇦ ⇨ ⇧ ⇩
+// Improvment: computing Ω Hooper's sequence as Ξ Truchet's tile diagonal
+//  χ. allows to swap colors or compute the dual (lazy constant)
+//  δ. Boolean to Truchet pair
+//  θ. Random  to Boolean
+//  Ω. Irrational to Random Sequence
+//  Ξ. Hooper Irrational to Truchet diagonal
+let δ = (b) => mod4((b ? 2 : 0) + χ())
+let θ = (x) => δ(x - Math.floor(x) < .5);
+let Ω;
+
+λh     = query_str('ph', "1/2");
+Λh     = eval(λh.replace(/√/g, 'Math.sqrt'))
+λv     = query_str('pv', "1/2");
+Λv     = eval(λv.replace(/√/g, 'Math.sqrt'))
+dd = 1. / Math.sqrt(2);
+Ω  = (α) => (m) => θ(dd * m - dd * α)
+/* 
+    Conjecture: Any map can be covered with A4 hitomezachi.
+*/
+
+let Ξh = Ω(Λh)  
+let Ξv = Ω(Λv) 
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Improvement: computing quadrichromy of Truchet tile
+xmin = ymin = Infinity
+xvalue = fill_x = fill_y = null;
+yvalue = back_x = back_y = null;
+function quad(x, y) {
+    value = τ(x, y);
+    if (GLYPH()=="Interlocked" && mod2(x+y)==0) value = mod4(value + 2)
+    interlock_string += "'" + ["ul","ur","lr","ll"][value] + "',"
+    let fill = null; let back = null;
+    if (x <= xmin) {
+        xmin = x;
+        if (y <= ymin) {
+            // initialise top-left corner at will   
+            back_x = back_y = fill_x = fill_y = true;
+            ymin = y; xvalue = yvalue = value;
+        } else {
+            // new row: y driven
+            if (mod2(yvalue - value) == 0)
+                if (yvalue == 0 || yvalue == 1)
+                    // ◤ | ◥
+                    // ◢ | ◣
+                    fill_y = !fill_y
+                else
+                    // ◢ | ◣
+                    // ◤ | ◥
+                    back_y = !back_y
+            // reset x
+            fill_x = fill_y; back_x = back_y;
+            yvalue = xvalue = value;
+        }
+    } else {
+        // inside a row: x driven
+        if (mod2(xvalue - value) == 0)
+            if (xvalue == 0 || xvalue == 3)
+                // ◤◢ | ◣◥ 
+                fill_x = !fill_x;
+            else
+                // ◢◤ | ◥◣
+                back_x = !back_x;
+        xvalue = value;
+    }
+    return { value: value, fill: fill_x, back: back_x }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Build Truchet tile
+xytopos = (x, y) => x + "•" + y
+degtotr = (deg)  => 'rotate(' + mod360(deg) + 'deg)'
+itotr   = (i)    => degtotr(SPIN * 90 * mod4(i))
+interlock_string = ""; // Bridges'23
+function tile(x, y) {
+    here = quad(x, y);  // τ = (x,y) => [◤, ◥,  ◢,   ◣] + fill and back quadrichromy
+    // <svg ><use href="#/id/"/></svg>
+    container = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    container.setAttribute("height", ZOOM()); container.setAttribute("width", ZOOM())
+    glyph = document.createElementNS("http://www.w3.org/2000/svg", "use")
+    glyph.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + GLYPH())
+    container.append(glyph);
+
+    // Tile identification
+    container.id = xytopos(x, y)
+    container.classList.add(GLYPH(), here.value)
+
+    // style="transform:0°|90°|180°|270°"
+    container.style['transform'] = itotr(here.value)
+
+    // quadrichromie
+    container.classList.add(
+        here.fill ? "fill_init" : "fill_peer",
+        here.back ? "back_init" : "back_peer",
+    )
+    return container
+}
+</script>
+<style>
+    .Mono {
+        fill: #555;
+        background: #eed;
+    }
+
+    .Interlocked {
+        fill:  none;
+        stroke: #000;
+        stroke-width: 2pt;
+        background: #fff;
+    }
+
+    .Smith, .Perco {
+        fill: none;
+        background: white;
+    }
+
+    .Solidus {
+        fill: lightgray;
+        background: white;
+        stroke-width: 1px;
+        stroke: #047
+    }
+    .Thin {
+        fill: none;
+        background: none;
+        stroke-width: 2px;
+        stroke: #047
+    }
+
+    line {
+        stroke-width: 10px;
+        stroke: #047
+    }
+
+    .blue {
+        stroke-width: 17px;
+        stroke: #047
+    }
+
+    .red {
+        stroke-width: 17px;
+        stroke: #C20
+    }
+
+    .black {
+        stroke-width: 4px;
+        stroke: black;
+        fill: none;
+    }
+
+    .Truchet.fill_peer {      fill: #fff;}
+    .Truchet.back_init {background: #ccc;}
+    .Truchet.fill_init {      fill: #999;}
+    .Truchet.back_peer {background: #555;}
+
+    .Mixed.fill_peer {        fill: #fff;}
+    .Mixed.back_init {  background: #ddd;}
+    .Mixed.fill_init {        fill: #bbb;}
+    .Mixed.back_peer {  background: #999;}
+
+    .HQ.fill_peer {        fill: #fee;}
+    .HQ.back_init {  background: #fff;}
+    .HQ.fill_init {        fill: #eef;}
+    .HQ.back_peer {  background: #eee;}
+
+    .HQ.fill_peer {        fill: #feb;}
+    .HQ.back_init {  background: #dfb;}
+    .HQ.fill_init {        fill: #bef;}
+    .HQ.back_peer {  background: #ffd;}
+
+
+
+    /* ------------------------------------- */
+
+    .floor {
+        margin: 0;
+        padding: 0;
+        line-height: 0pt;
+        white-space: nowrap;
+        display: inline;
+    }
+
+    .flag {
+        text-align: center;
+        top: 50%;
+        right: 50%;
+    }
+
+    .stop-scrolling {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .menu {
+        position: absolute;
+        padding: 0.5em;
+        opacity: 0.8;
+        font-size: 12pt;
+        font-family: Arial, Helvetica, sans-serif;
+        color: darkred;
+        background-color: white;
+    }
+    input[type="text"] {
+        font-size:24px;
+    }
+
+    i {
+        font-size: 10pt;
+    }
+
+    .glyphs {
+        display: none;
+    }
+
+</style>
+<body class="stop-scrolling">
+    <div class="glyphs">
+        <svg height="80" width="80">
+            <defs>
+                <filter id="f1" x="0" y="0">
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2" />
+                </filter>
+            </defs>
+            <symbol id="Mono" viewbox="0 0 100 100">
+                <path d="M 0 0 L 0 100 L 100 0 Z" /> <!-- ◤ -->
+            </symbol>
+            <!--symbol id="Interlocked" viewbox="0 0 100 100">
+                <path d="M 0 0 L 0 100 L 100 0 Z" /> 
+            </symbol-->
+            <symbol id="Interlocked" viewbox="0 0 100 100">
+                <path d="M 0 0 L 50 50" /> 
+                <path d="M 0 100 L 100 0" /> 
+                <path d="M 0,0 A 50,50 0,0,0 100,100" />
+                <!-- <path d="M 100 100 L 80 80" />  -->
+                <!-- <path d="M 80,20 A 50,50 0,0,1 20,80" /> -->
+            </symbol>
+            <symbol id="Thin" viewbox="0 0 100 100">
+                <path d="M 0 0 L 100 100" />
+            </symbol>
+
+            <symbol id="Solidus" viewbox="0 0 100 100">
+                <path d="M 0 0 L 30 0 L 100 70 L 100 100 L 70 100 L 0 30 Z" /> <!-- / -->
+                <line x1="0" x2="30" y1="0" y2="0"/> <!-- / -->
+                <line x1="0" x2="0" y1="30" y2="0"/> <!-- / -->
+                <line x1="70" x2="100" y1="100" y2="100"/> <!-- / -->
+                <line x1="100" x2="100" y1="100" y2="70"/> <!-- / -->
+                <!-- <path d="M -50 -150 L 150 50" /> / -->
+                <!--<path d="M -50 50 L 150 250" />  / -->
+            </symbol>
+            <symbol id="Truchet" viewbox="0 0 100 100">
+                <path d="M 0 0 L 0 100 L 100 0 Z" /> <!-- ◤ -->
+            </symbol>
+            <symbol id="Smith" viewbox="0 0 100 100">
+                <path class="blue" d="M 0,50 A 50,50 0,0,0 50,0" />
+                <path class="red" d="M 100,50 A 50,50 0,0,0 50,100" />
+            </symbol>
+            <symbol id="Perco" viewbox="0 0 100 100">
+                <path class="black" d="M 100,50 L 50,50     L 50,100" /> 
+                <!--
+                <path class="black" d="M 100,50 L 50,50     L 50,100" /> 
+                <path class="black" d="M 100,50 A 50,50 0,0,0 50,100" />
+                <circle class="red" cx="50" cy="50" r="5" />
+                -->
+            </symbol>
+            <symbol id="HQ" viewbox="0 0 100 100">
+                <path class="black" d="M 100,50 L 50,50     L 50,100" /> 
+                <path d="M 0 0 L 0 100 L 100 0 Z" /> <!-- ◤ -->
+
+                <!--
+                <path class="black" d="M 100,50 L 50,50     L 50,100" /> 
+                <path class="black" d="M 100,50 A 50,50 0,0,0 50,100" />
+                <circle class="red" cx="50" cy="50" r="5" />
+                -->
+            </symbol>
+            <symbol id="Mixed" viewbox="0 0 100 100">
+                <path d="M 0 0 L 0 100 L 100 0 Z" /> <!-- ◤ -->
+                <path class="blue" d="M 0,50 A 50,50 0,0,0 50,0" />
+                <path class="red" d="M 100,50 A 50,50 0,0,0 50,100" />
+            </symbol>
+        </svg>
+    </div>
+    <div class="floor">
+        <!--   (<svg style="transform:0°|90°|180°|270°"><use href="#/id/"/></svg>)* 
+               wrt. τ = (x,y) =>     [◤, ◥,  ◢,   ◣]
+          -->
+    </div>
+    <div class="menu" style="top:0%; right:0%;">
+        <p>
+            Glyph type <br />
+            <select id="GLYPH" onchange="searchset('t',this.value); ">
+                <option value="Interlocked">Interlocked inverted rule</option>
+                <option value="Mono">Historic Truchet</option>
+                <option value="Perco">Hitomezachi</option>
+                <option value="Solidus">Thick Diagonal</option>
+                <option value="Thin">Thin Diagonal</option>
+                <option value="Truchet">Four Greyscale Truchet</option>
+                <option value="Smith">Bicolor Smith</option>
+                <option value="Mixed">Van Dongen Mixed</option>
+                <option value="HQ">Hitomezachi Quadrachromatic</option>
+            </select>
+        </p>
+        <p>
+            Glyph size <br />
+            <select id="ZOOM" onchange="searchset('z',this.value);">
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="40">40</option>
+                <option value="80">80</option>
+                <option value="140">160</option>
+                <option value="320">320</option>
+            </select>  <i id="DIMS"/>
+
+        </p>
+        <p>
+            Version (χ) : <br />
+            <select id="KHI" onchange="searchset('k',this.value);">
+                <option value="0">Standard</option>
+                <option value="1">Dual</option>
+                <option value="2">Reversed color standard</option>
+                <option value="3">Reversed color dual</option>
+            </select>
+        </p>
+        <p>
+            Paramètre (λ) horizontal: <br />
+            <input id="LAMBDAH" onchange="searchset('ph',this.value);">
+            </input>
+            <br></br>
+            <i id="VALUEH"/>
+        </p>
+        <p>
+            Paramètre (λ) vertical: <br />
+            <input id="LAMBDAV" onchange="searchset('pv',this.value);">
+            </input>
+            <br></br>
+            <i id="VALUEV"/>
+        </p>
+    </div>
+    <div class="menu fullscreen" style="bottom:0%; right:0%; font-size: 24pt;">
+        <input type="text" id="LAMBDA-FULL" onchange="searchset('p',this.value);">
+        </input>
+    </div>
+    <div class="menu flag">Computing...</div>
+</body>
+
+<script>
+body   = document.getElementsByTagName("body")[0];
+floor  = document.getElementsByClassName("floor")[0];
+width  = () => Math.ceil(body.getBoundingClientRect().width / ZOOM())
+height = () => Math.ceil(body.getBoundingClientRect().height / ZOOM())
+br     = () => document.createElement("BR");
+
+function build() {
+    xOrigin = - Math.floor(width() / 2) + 1 ;
+    yOrigin = - Math.floor(height() / 2) + 1;
+    h = height(); w = width();
+    buffer = [];
+    interlock_string = "[["
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) 
+            buffer.push(tile(x + xOrigin, y + yOrigin))
+        eol = br(); // break row
+        interlock_string += "],["
+        eol.id = xytopos(x + xOrigin, y + yOrigin); 
+        buffer.push(eol);
+    }
+    interlock_string += "]]"
+    console.log('\n\n' + interlock_string.replace(/,\]/g, ']\n').replace(',\[\]',''))
+    return buffer
+}
+
+// Interactive parameters
+function searchset(k, v) { search.set(k, v); window.location.search = search.toString(); }
+let GLYPH = () => query_str('t', "Perco") 
+let ZOOM  = () => query_int('z', 20)  
+function panel() {
+    document.getElementById("GLYPH").value       = GLYPH();
+    document.getElementById("ZOOM").value        = ZOOM();
+    document.getElementById("DIMS").innerHTML    = "=> " + width() + " x " + height();
+    document.getElementById("KHI").value         = χ();
+    document.getElementById("LAMBDAH").value      = λh;
+    document.getElementById("VALUEH").innerHTML   = "=> " + Λh;
+    document.getElementById("LAMBDAV").value      = λv;
+    document.getElementById("VALUEV").innerHTML   = "=> " + Λv;
+}
+
+// Computing flag and menus
+function main() {
+    panel();
+    flag = document.getElementsByClassName("flag")[0].style;
+    flag.display = "block";
+    delayed = function () {
+        floor.replaceChildren(...build());
+        for (menu of document.getElementsByClassName("menu")) // menu out in fullscreen
+            menu.style['display'] = window.innerHeight == screen.height ? 'none' : 'block'
+        for (menu of document.getElementsByClassName("fullscreen")) // menu only in fullscreen
+            menu.style['display'] = window.innerHeight == screen.height ? 'none' : 'none'
+        flag.display = "none";
+    }
+    setTimeout(() => delayed(), 0);
+}
+window.onresize = main;
+main();
+</script>
